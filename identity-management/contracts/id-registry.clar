@@ -39,12 +39,12 @@
 (define-map identity-attributes
     {identity-owner: principal, attribute-name: (string-ascii 32)}
     {
-        attribute-value: (string-utf8 256),
+        attribute-value: (string-ascii 256),
         is-verified: bool,
         verification-authority: (optional principal),
         verification-timestamp: (optional uint),
         verification-expiry: (optional uint),
-        verification-metadata: (optional (string-utf8 256))
+        verification-metadata: (optional (string-ascii 256))
     }
 )
 
@@ -54,7 +54,7 @@
     {
         granted-permissions: (list 10 (string-ascii 32)),
         delegation-expiry: uint,
-        delegation-metadata: (string-utf8 256),
+        delegation-metadata: (string-ascii 256),
         can-sub-delegate: bool
     }
 )
@@ -64,13 +64,12 @@
     {identity-owner: principal, activity-timestamp: uint}
     {
         activity-type: (string-ascii 32),
-        activity-data: (optional (string-utf8 256)),
+        activity-data: (optional (string-ascii 64)),
         initiated-by: principal
     }
 )
 
 ;; Read-only functions
-
 (define-read-only (get-user-identity (user-address principal))
     (match (map-get? user-identities user-address)
         user-identity user-identity
@@ -109,7 +108,6 @@
 )
 
 ;; Public functions
-
 (define-public (register-new-identity (display-name (string-ascii 64)))
     (let
         (
@@ -118,7 +116,7 @@
         )
         (asserts! (not (is-identity-registered user-principal)) ERR-IDENTITY-EXISTS)
         (try! (log-identity-activity "REGISTRATION" none))
-        (ok (map-set user-identities
+        (map-set user-identities
             user-principal
             {
                 identity-active: true,
@@ -129,31 +127,12 @@
                 identity-score: u1,
                 verification-level: u0
             }
-        ))
-    )
-)
-
-(define-public (update-display-name (updated-name (string-ascii 64)))
-    (let
-        (
-            (user-principal tx-sender)
-            (current-timestamp (unwrap! (get-block-info? time (- block-height u1)) ERR-SYSTEM-FAILURE))
         )
-        (asserts! (is-identity-registered user-principal) ERR-IDENTITY-NOT-FOUND)
-        (try! (log-identity-activity "NAME_UPDATE" (some updated-name)))
-        (ok (map-set user-identities
-            user-principal
-            (merge (unwrap! (map-get? user-identities user-principal) ERR-IDENTITY-NOT-FOUND)
-                {
-                    display-name: updated-name,
-                    last-modified-timestamp: current-timestamp
-                }
-            )
-        ))
+        (ok true)
     )
 )
 
-(define-public (set-identity-attribute (attribute-name (string-ascii 32)) (attribute-value (string-utf8 256)))
+(define-public (set-identity-attribute (attribute-name (string-ascii 32)) (attribute-value (string-ascii 256)))
     (let
         (
             (user-principal tx-sender)
@@ -161,7 +140,7 @@
         )
         (asserts! (is-identity-registered user-principal) ERR-IDENTITY-NOT-FOUND)
         (try! (log-identity-activity "ATTRIBUTE_SET" (some attribute-name)))
-        (ok (map-set identity-attributes
+        (map-set identity-attributes
             {identity-owner: user-principal, attribute-name: attribute-name}
             {
                 attribute-value: attribute-value,
@@ -171,7 +150,8 @@
                 verification-expiry: none,
                 verification-metadata: none
             }
-        ))
+        )
+        (ok true)
     )
 )
 
@@ -185,7 +165,7 @@
         (asserts! (is-identity-registered identity-owner) ERR-IDENTITY-NOT-FOUND)
         (asserts! (is-identity-registered verifier-principal) ERR-UNAUTHORIZED-VERIFIER)
         (try! (log-identity-activity "ATTRIBUTE_VERIFIED" (some attribute-name)))
-        (ok (map-set identity-attributes
+        (map-set identity-attributes
             {identity-owner: identity-owner, attribute-name: attribute-name}
             (merge (unwrap! (map-get? identity-attributes {identity-owner: identity-owner, attribute-name: attribute-name}) ERR-ATTRIBUTE-NOT-FOUND)
                 {
@@ -193,10 +173,11 @@
                     verification-authority: (some verifier-principal),
                     verification-timestamp: (some current-timestamp),
                     verification-expiry: (some verification-valid-until),
-                    verification-metadata: (some (concat "Verified by: " (to-ascii verifier-principal)))
+                    verification-metadata: (some "Verified by authorized verifier")
                 }
             )
-        ))
+        )
+        (ok true)
     )
 )
 
@@ -205,7 +186,7 @@
     (delegate-permissions (list 10 (string-ascii 32))) 
     (delegation-duration uint)
     (can-sub-delegate bool)
-    (metadata (string-utf8 256)))
+    (metadata (string-ascii 256)))
     (let
         (
             (identity-owner tx-sender)
@@ -214,8 +195,8 @@
         )
         (asserts! (is-identity-registered identity-owner) ERR-IDENTITY-NOT-FOUND)
         (asserts! (is-identity-registered delegate-address) ERR-DELEGATE-NOT-FOUND)
-        (try! (log-identity-activity "DELEGATE_ADDED" (some (to-ascii delegate-address))))
-        (ok (map-set identity-delegates
+        (try! (log-identity-activity "DELEGATE_ADDED" none))
+        (map-set identity-delegates
             {identity-owner: identity-owner, delegate-address: delegate-address}
             {
                 granted-permissions: delegate-permissions,
@@ -223,7 +204,8 @@
                 delegation-metadata: metadata,
                 can-sub-delegate: can-sub-delegate
             }
-        ))
+        )
+        (ok true)
     )
 )
 
@@ -233,8 +215,9 @@
             (identity-owner tx-sender)
         )
         (asserts! (is-identity-registered identity-owner) ERR-IDENTITY-NOT-FOUND)
-        (try! (log-identity-activity "DELEGATE_REMOVED" (some (to-ascii delegate-address))))
-        (ok (map-delete identity-delegates {identity-owner: identity-owner, delegate-address: delegate-address}))
+        (try! (log-identity-activity "DELEGATE_REMOVED" none))
+        (map-delete identity-delegates {identity-owner: identity-owner, delegate-address: delegate-address})
+        (ok true)
     )
 )
 
@@ -246,8 +229,8 @@
         )
         (asserts! (is-identity-registered identity-owner) ERR-IDENTITY-NOT-FOUND)
         (asserts! (is-identity-registered backup-address) ERR-IDENTITY-NOT-FOUND)
-        (try! (log-identity-activity "BACKUP_SET" (some (to-ascii backup-address))))
-        (ok (map-set user-identities
+        (try! (log-identity-activity "BACKUP_SET" none))
+        (map-set user-identities
             identity-owner
             (merge (unwrap! (map-get? user-identities identity-owner) ERR-IDENTITY-NOT-FOUND)
                 {
@@ -255,25 +238,26 @@
                     last-modified-timestamp: current-timestamp
                 }
             )
-        ))
+        )
+        (ok true)
     )
 )
 
 ;; Private helper functions
-
-(define-private (log-identity-activity (activity-type (string-ascii 32)) (activity-data (optional (string-utf8 256))))
+(define-private (log-identity-activity (activity-type (string-ascii 32)) (activity-data (optional (string-ascii 64))))
     (let
         (
             (current-timestamp (unwrap! (get-block-info? time (- block-height u1)) ERR-SYSTEM-FAILURE))
         )
-        (ok (map-set identity-activity-log
+        (map-set identity-activity-log
             {identity-owner: tx-sender, activity-timestamp: current-timestamp}
             {
                 activity-type: activity-type,
                 activity-data: activity-data,
                 initiated-by: tx-sender
             }
-        ))
+        )
+        (ok true)
     )
 )
 
@@ -296,10 +280,11 @@
                 (current-score (get identity-score user-identity))
                 (new-score (+ current-score (if (> score-change 0) u1 u0)))
             )
-            (ok (map-set user-identities
+            (map-set user-identities
                 user-address
                 (merge user-identity { identity-score: new-score })
-            ))
+            )
+            (ok true)
         )
         ERR-IDENTITY-NOT-FOUND
     )
@@ -307,8 +292,7 @@
 
 ;; Contract initialization
 (begin
-    ;; Initialize any necessary contract state here
-    (try! (map-set user-identities
+    (map-set user-identities
         CONTRACT-OWNER
         {
             identity-active: true,
@@ -319,5 +303,6 @@
             identity-score: u100,
             verification-level: u5
         }
-    ))
+    )
+    (ok true)
 )
